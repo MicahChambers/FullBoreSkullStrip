@@ -179,5 +179,5 @@ def build(bld):
         f.write('#define __version__ "%s"\n\n' % gitversion())
         f.close()
 
-    bld.recurse('src scripts')
+    bld.recurse('deps src scripts')
     bld.load('etest', tooldir='test')
