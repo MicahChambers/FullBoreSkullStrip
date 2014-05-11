@@ -1,0 +1,11 @@
+from os.path import join
+
+def build(bld):
+    if bld.env.STATIC_LINK:
+        bld.stlib(target='alglib', features='cxx', source = bld.path.ant_glob(join('src', '*.cpp')),
+                        export_includes = 'src')
+    else:
+        bld.shlib(target='alglib', features='cxx', source = bld.path.ant_glob(join('src', '*.cpp')),
+                        export_includes = 'src')
+    
+    bld.program(target='eigenvector_test', source = 'eigenvector_test.cpp', use = 'alglib')
