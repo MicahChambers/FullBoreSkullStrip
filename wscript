@@ -23,24 +23,6 @@ itklibs = 'itkdouble-conversion ITKBiasCorrection ITKBioCell ITKCommon \
         ITKCommon itkv3p_netlib itkvnl'.split() # these are important last ones
 #    itkvnl_algo itkzlib'.split()
 
-vtklibs = 'vtkIOXMLParser vtkIOXML vtkIOGeometry vtkIOLegacy vtkCommonComputationalGeometry vtkCommonCore \
-    vtkCommonDataModel vtkCommonExecutionModel vtkCommonMath vtkCommonMisc \
-    vtkCommonSystem vtkCommonTransforms vtkDICOMParser vtkFiltersCore \
-    vtkFiltersExtraction vtkFiltersGeneral vtkFiltersGeometry vtkFiltersHybrid \
-    vtkFiltersImaging vtkFiltersModeling vtkFiltersSources vtkFiltersStatistics \
-    vtkFiltersTexture vtkjsoncpp\
-    vtkIOCore vtkIOImage vtkImagingColor \
-    vtkImagingCore vtkImagingFourier vtkImagingGeneral vtkImagingHybrid \
-    vtkImagingMath vtkImagingMorphological vtkImagingSources vtkImagingStatistics \
-    vtkImagingStencil vtkInfovisCore vtkInfovisLayout vtkInteractionImage \
-    vtkInteractionStyle vtkInteractionWidgets \
-    vtkRenderingAnnotation vtkRenderingCore \
-    vtkRenderingFreeType vtkRenderingFreeTypeOpenGL \
-    vtkRenderingImage vtkRenderingLOD vtkRenderingLabel \
-    vtkRenderingOpenGL vtkRenderingVolume vtkRenderingVolumeOpenGL \
-    vtkalglib vtkexpat vtkfreetype vtkftgl vtkjpeg vtkmetaio vtkoggtheora vtkpng \
-    vtksqlite vtksys vtktiff vtkzlib vtkCommonCore vtkCommonDataModel '.split()
-
 def cmakeparse(cmakefile):
     ifile = open(cmakefile)
     ind = ifile.read()
@@ -60,12 +42,6 @@ def configure(conf):
     conf.load('etest', tooldir='test')
 
     env = conf.env
-
-    ############################### 
-    # Basic Compiler Configuration
-    ############################### 
-#   conf.check_python_version((3,0,0))
-#   conf.check_python_headers()
 
     conf.env.RPATH = []
     if opts['enable_rpath'] or opts['enable_build_rpath']:
@@ -107,7 +83,7 @@ def configure(conf):
     ############################### 
     # Library Configuration
     ############################### 
-    for DD in ['LAPACK', 'ITK', 'VTK', 'GSL', 'OPENCL', 'CUDA', 'MAGMA', 'R']: 
+    for DD in ['ITK']: 
         # ITK -> itk (etc)
         dd = DD.lower()
 
@@ -145,90 +121,13 @@ def configure(conf):
                 mandatory = True, 
                 use = 'ITK')
 
-    ## VTK ##
-    if opts['static']:
-        env.LIB_VTK = [ll+'-'+opts['vtkvers'] for ll in vtklibs]*2 + ['pthread', 'dl']
-    else:
-        env.LIB_VTK = [ll+'-'+opts['vtkvers'] for ll in vtklibs]
-
-    conf.check(lib=' '.join(env.LIB_VTK), 
-                header_name = 'vtkArrayData.h', 
-                mandatory = True, 
-                use = 'VTK')
-
-    ## GSL ##
-    conf.check_cfg(package="", path="gsl-config", args="--cflags --libs", uselib_store="GSL")
-    conf.check(lib = ' '.join(env.LIB_GSL), header_name = 'gsl/gsl_matrix.h', use="GSL")
-    
-    ## Open CL ##
-    env.LIB_OPENCL = ['OpenCL']
-    env.HAVE_OPENCL = conf.check(
-                lib=' '.join(env.LIB_OPENCL), 
-                header_name = 'CL/cl.h', 
-                mandatory = False, 
-                use ='OPENCL', var = 'HAVE_OPENCL',
-                define_name = 'HAVE_OPENCL')
-    
-    ## CUDA ##
-    env.LIB_CUDA = ['cuda', 'cublas', 'cudart']
-    env.HAVE_CUDA= conf.check(
-                lib=' '.join(env.LIB_CUDA), 
-                header_name = 'cuda.h', 
-                mandatory = False, 
-                use ='CUDA', var = 'HAVE_CUDA',
-                define_name = 'HAVE_CUDA')
-    
-    ## LAPACK ##
-    env.LIB_LAPACK = ['lapack', 'blas', 'gfortran']
-    conf.check(lib=' '.join(env.LIB_LAPACK), 
-                mandatory=True, 
-                use ='LAPACK', var = 'HAVE_LAPACK',
-                define_name = 'HAVE_LAPACK')
-    
-    ## MAGMA ##
-    env.LIB_MAGMA = ['magma', 'magmablas']
-    env.HAVE_MAGMA = conf.check(
-                lib=' '.join(env.LIB_MAGMA), 
-                header_name = 'magma.h', 
-                mandatory=False, var = 'HAVE_MAGMA',
-                use=['LAPACK', 'CUDA', 'MAGMA'], 
-                define_name = 'HAVE_MAGMA')
-    
-    ## R ## 
-    if opts['no_r']:
-        env.HAVE_R = False
-    else:
-        env.HAVE_R = conf.find_program("R")
-        conf.check_cfg(path=env["R"], args="CMD config --cppflags", package="", uselib_store="R")
-        conf.check_cfg(path=env["R"], args="CMD config --ldflags", package="", uselib_store="R")
-        conf.check(lib = ' '.join(env.LIB_R), header_name = 'R.h', use="R LAPACK")
-    
-    ## Python ## 
-#    conf.find_program("python3-config")
-#    conf.check_cfg(path="python3-config", args="--cflags", package="", uselib_store="PYTHON3")
-#    conf.check_cfg(path="python3-config", args="--ldflags", package="", uselib_store="PYTHON3")
-#    env.LIBPATH_PYTHON3 = join(conf.check_cfg(path=env["PYTHON3-CONFIG"], 
-#                   args="--prefix", package="").rstrip(), "lib")
-#    conf.check(lib = ' '.join(env.LIB_PYTHON3), header_name = 'Python.h', use="PYTHON3")
-    
-    #Set correct data and input data directories for extended tests (etest)
-    for dd in conf.path.ant_glob("test/testdata/correct/*"):
-        pth = dd.relpath()
-        conf.path.make_node(pth)
-        print(pth)
-    
-    for dd in conf.path.ant_glob("test/testdata/in/*"):
-        pth = dd.relpath()
-        conf.path.make_node(pth)
-        print(pth)
-
 def options(ctx):
     ctx.load('compiler_cxx')
     ctx.load('etest', tooldir='test')
 
     gr = ctx.get_option_group('configure options')
     
-    for DD in ['LAPACK', 'ITK', 'VTK', 'GSL', 'OPENCL', 'CUDA', 'MAGMA', 'R']: 
+    for DD in ['ITK']: 
         # ITK -> itk (etc)
         dd = DD.lower()
         gr.add_option('--'+dd+'base', action='store', default = '/usr', help = DD+' Prefix Dir')
@@ -240,7 +139,6 @@ def options(ctx):
         gr.add_option('--'+dd+'idir', action='store', default = False, 
                         help = DD+' Include Dir, can be relative to {PREFIX}')
 
-    gr.add_option('--vtkvers', action='store', default = '6.1', help = 'VTK Version')
     gr.add_option('--itkvers', action='store', default = '4.6', help = 'ITK Version')
     
     gr.add_option('--enable-rpath', action='store_true', default = False, help = 'Set RPATH to build/install dirs')
@@ -251,7 +149,6 @@ def options(ctx):
     gr.add_option('--profile', action='store_true', default = False, help = 'Build with debug and profiler flags')
     gr.add_option('--release', action='store_true', default = False, help = 'Build with tuned compiler optimizations')
     gr.add_option('--native', action='store_true', default = False, help = 'Build with highly specific compiler optimizations')
-    gr.add_option('--no-r', action='store_true', default = False, help = "Don't build R modules")
     gr.add_option('--static', action='store_true', default = False, help = "Build statically (turns off R and python)")
     
 def gitversion():
