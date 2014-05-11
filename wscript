@@ -45,20 +45,19 @@ def configure(conf):
 
     conf.env.RPATH = []
     if opts['enable_rpath'] or opts['enable_build_rpath']:
-        for pp in ['fmri', 'graph', 'libs', 'point3d', 'R']:
-            conf.env.RPATH.append(join('$ORIGIN', '..', pp))
+        conf.env.RPATH.append('$ORIGIN')
     
     if opts['enable_rpath'] or opts['enable_install_rpath']:
         conf.env.RPATH.append('$ORIGIN/../lib')
     
     conf.env.DEFINES = ['AE_CPU=AE_INTEL', 'VCL_CAN_STATIC_CONST_INIT_FLOAT=0', 'VCL_CAN_STATIC_CONST_INIT_INT=0']
+    conf.env.LINKFLAGS = ['-lm']
     # for static build
     if opts['static']: 
         conf.env.CXXFLAGS = ['-Wall', '-std=c++11', '-static-libgcc', '-static-libstdc++']
-        conf.env.LINKFLAGS = ['-static-libgcc', '-static-libstdc++']
+        conf.env.LINKFLAGS.extend('-static-libgcc', '-static-libstdc++')
         conf.env.STATIC_LINK = True
     else:
-        conf.env.LINKFLAGS = []
         conf.env.CXXFLAGS = ['-Wall', '-std=c++11']
         conf.env.STATIC_LINK = False
 
@@ -175,7 +174,7 @@ def gitversion():
     return mastertxt
 
 def build(bld):
-    with open("src/libs/version.h", "w") as f:
+    with open("src/version.h", "w") as f:
         f.write('#define __version__ "%s"\n\n' % gitversion())
         f.close()
 
