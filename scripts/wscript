@@ -1,0 +1,6 @@
+from os.path import join
+from waflib.Build import Utils
+
+def build(bld):
+	bld.install_files(dest = '${PREFIX}/bin', files = [], chmod=Utils.O755)
+
