@@ -21,8 +21,8 @@ along with the Neural Programs Library.  If not, see
 #include <tclap/CmdLine.h>
 #include "version.h"
 #include "registerIO.h"
+#include "itkFourier.h"
 RegisterIO REG;
-
 
 
 #include <itkNearestNeighborInterpolateImageFunction.h>
@@ -190,6 +190,9 @@ int main(int argc, char** argv)
 		init->InitializeTransform();
 	}
 	
+	auto result = apply(rigid.GetPointer(), atlas, input);
+	writeImage<ImageT>("rigidinit.nii.gz", result);
+	
 	itk::Vector<double,3> xaxis((double)0);
 	itk::Vector<double,3> yaxis((double)0);
 	itk::Vector<double,3> zaxis((double)0);
@@ -212,7 +215,19 @@ int main(int argc, char** argv)
 	yrigid->SetTranslation(zero);
 	zrigid->SetTranslation(zero);
 
-	/* Rigid registration, try all different directions */
+	/* Rigid registration, try all different directions, but do it at low res */
+
+	ImageT::SizeType osz;
+	for(int ii = 0 ; ii < 3; ii++)
+		osz[ii] = input->GetRequestedRegion().GetSize()[ii]*
+			input->GetSpacing()[ii]/5;
+	auto lr_input = resize<ImageT>(input, osz, tukey);
+	
+	for(int ii = 0 ; ii < 3; ii++)
+		osz[ii] = atlas->GetRequestedRegion().GetSize()[ii]*
+			input->GetSpacing()[ii]/5;
+	auto lr_atlas = resize<ImageT>(atlas, osz, tukey);
+
 	double bestval = 0;
 	auto bestparams = rigid->GetParameters();
 	std::set<itk::VersorRigid3DTransform<double>::ParametersType, ParamLessEqual> tested;
@@ -234,11 +249,11 @@ int main(int argc, char** argv)
 //				cerr << rigid->GetMatrix() << endl;
 				cerr << rigid->GetParameters() << endl;
 				// perform full registration
-				double val = rigidReg(rigid, atlas, input, 4, 
-						true, 100, 0.01, 1, 0, 0.4, 0, 0.01);
+				double val = rigidReg(rigid, lr_atlas, lr_input, 4,
+						true, 100, 0.01, .1, 0, 0.7, 0, 0.001);
 //				cerr << rigid->GetTranslation() << endl;
 //				cerr << rigid->GetMatrix() << endl;
-//				cerr << rigid->GetParameters() << endl;
+				cerr << rigid->GetParameters() << endl << endl;
 				if(val > bestval) {
 					bestval = val;
 					bestparams = rigid->GetParameters();
@@ -247,6 +262,18 @@ int main(int argc, char** argv)
 		}
 	}
 	
+	result = apply(rigid.GetPointer(), atlas, input);
+	writeImage<ImageT>("rigidResult_ai.nii.gz", result);
+	
+	result = apply(rigid.GetPointer(), input, atlas);
+	writeImage<ImageT>("rigidResult_ia.nii.gz", result);
+	
+	result = apply(rigid.GetPointer(), lr_atlas, lr_input);
+	writeImage<ImageT>("rigidResult_l_ai.nii.gz", result);
+	
+	result = apply(rigid.GetPointer(), lr_input, lr_atlas);
+	writeImage<ImageT>("rigidResult_l_ia.nii.gz", result);
+
 	// perform real rigid registration with the best parameters from above
 	rigid->SetParameters(bestparams);
 	cerr << rigid->GetTranslation() << endl;
@@ -406,7 +433,7 @@ double affineReg(itk::AffineTransform<double, 3>::Pointer tfm,
 		scales[ii] = 1;
 	//translation
 	for(int ii = 3 ; ii < 6; ii++)
-		scales[ii] = .001;
+		scales[ii] = .0001;
 
 	reg->SetOptimizer(opt);
 	reg->SetTransform(tfm);
