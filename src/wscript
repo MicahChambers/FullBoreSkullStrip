@@ -1,0 +1,8 @@
+
+def build(bld):
+    bld.program(target = 'FullBoreSkullStrip', 
+                source = 'FullBoreSkullStrip.cpp', 
+                use = 'registerIO tclap')
+    
+    # this is to register IO the way CMAKE does for ITK normally
+    bld.stlib(target = 'registerIO', source = 'registerIO.cpp', use = 'ITK')
