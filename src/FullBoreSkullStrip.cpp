@@ -116,7 +116,7 @@ struct ParamLessEqual {
  */
 ImageT::PointType getCenter(ImageT::Pointer in)
 {
-	itk::ContinuousIndex<double, 3> index = {{0,0,0}};
+	itk::ContinuousIndex<double, 3> index = {{{0,0,0}}};
 	ImageT::PointType opt;
 	itk::ImageRegionIteratorWithIndex<ImageT> it(in,in->GetRequestedRegion());
 	double mean = 0;
@@ -168,6 +168,8 @@ int main(int argc, char** argv)
 			"transformation, in same space as input", false, "", "image", cmd);
 	
 	TCLAP::SwitchArg a_moments("M", "moments-align", "Moments align first.", cmd);
+	TCLAP::SwitchArg a_reorient("R", "bad-orient", "If the orientation is "
+			"incorrect, then this will restart in every 90 degree rotation", cmd);
 	
 	TCLAP::MultiArg<double> a_affine_smooth("A", "affine-smooth",
 			"Gaussian smoothing standard deviation during affine "
@@ -210,56 +212,60 @@ int main(int argc, char** argv)
 		bspline_smooth[2] = 0.5;
 	}
 
-	/* Affine registration, try all different directions, but do it at low res */
-
-	itk::Vector<double, 3> zero((double)0);
-	ImageT::SizeType osz;
-	for(int ii = 0 ; ii < 3; ii++)
-		osz[ii] = input->GetRequestedRegion().GetSize()[ii]*
-			input->GetSpacing()[ii]/5;
-	auto lr_input = resize<ImageT>(input, osz, tukey);
-	
-	for(int ii = 0 ; ii < 3; ii++)
-		osz[ii] = atlas->GetRequestedRegion().GetSize()[ii]*
-			input->GetSpacing()[ii]/5;
-	auto lr_atlas = resize<ImageT>(atlas, osz, tukey);
-				
 	auto affine = itk::AffineTransform<double, 3>::New();
-	affine->SetIdentity();
-	double bestval = -INFINITY;
-	auto bestparams = affine->GetParameters();
-	for(int xx=0; xx < 4; xx++) {
-		for(int yy=0; yy < 4; yy++) {
-			for(int zz=0; zz < 4; zz++) {
-				affine->SetIdentity();
-				affine->SetTranslation(movingCenter-fixedCenter);
-				affine->Rotate(1,2,xx*PI/2.); // rotate 90degress
-				affine->Rotate(0,2,yy*PI/2.); // rotate 90degress
-				affine->Rotate(0,1,zz*PI/2.); // rotate 90degress
+	if(a_reorient.isSet()) {
+		/* Affine registration, try all different directions, but do it at low res */
 
-				auto it = tested.insert(affine->GetParameters());
-				if(!it.second) {
-					cerr << xx << "," << yy << "," << zz << endl;
-					cerr << "Count > 0" << endl;
-					continue;
-				}
+		itk::Vector<double, 3> zero((double)0);
+		ImageT::SizeType osz;
+		for(int ii = 0 ; ii < 3; ii++)
+			osz[ii] = input->GetRequestedRegion().GetSize()[ii]*
+				input->GetSpacing()[ii]/5;
+		auto lr_input = resize<ImageT>(input, osz, tukey);
 
-				cerr << affine->GetParameters() << endl;
-				// perform full registration
-				double val = affineReg(affine, lr_atlas, lr_input, 4,
-						true, 100, 0.01, .1, 0, 0.7, 0, 0.001);
-				cerr << affine->GetParameters() << endl << endl;
-				if(val > bestval) {
-					cerr << "New Best" << endl;
-					bestval = val;
-					bestparams = affine->GetParameters();
+		for(int ii = 0 ; ii < 3; ii++)
+			osz[ii] = atlas->GetRequestedRegion().GetSize()[ii]*
+				input->GetSpacing()[ii]/5;
+		auto lr_atlas = resize<ImageT>(atlas, osz, tukey);
+
+		double bestval = -INFINITY;
+		auto bestparams = affine->GetParameters();
+		for(int xx=0; xx < 4; xx++) {
+			for(int yy=0; yy < 4; yy++) {
+				for(int zz=0; zz < 4; zz++) {
+					affine->SetIdentity();
+					affine->SetTranslation(movingCenter-fixedCenter);
+					affine->Rotate(1,2,xx*PI/2.); // rotate 90degress
+					affine->Rotate(0,2,yy*PI/2.); // rotate 90degress
+					affine->Rotate(0,1,zz*PI/2.); // rotate 90degress
+
+					auto it = tested.insert(affine->GetParameters());
+					if(!it.second) {
+						cerr << xx << "," << yy << "," << zz << endl;
+						cerr << "Count > 0" << endl;
+						continue;
+					}
+
+					cerr << affine->GetParameters() << endl;
+					// perform full registration
+					double val = affineReg(affine, lr_atlas, lr_input, 4,
+							true, 100, 0.01, .1, 0, 0.7, 0, 0.001);
+					cerr << affine->GetParameters() << endl << endl;
+					if(val > bestval) {
+						cerr << "New Best" << endl;
+						bestval = val;
+						bestparams = affine->GetParameters();
+					}
 				}
 			}
 		}
+		affine->SetParameters(bestparams);
+	} else {
+		affine->SetIdentity();
+		affine->SetTranslation(movingCenter-fixedCenter);
 	}
 	
 	/* Affine registration */
-	affine->SetParameters(bestparams);
 	for(int ii=0; affine_smooth.size(); ii++) {
 		affineReg(affine, atlas, input, affine_smooth[ii], 
 				true, 1000, 0.001, 1, 0, 0.4, 0, 0.001);
@@ -313,14 +319,13 @@ double bSplineReg(itk::BSplineTransform<double, 3, 3>::Pointer tfm,
 	auto interp = itk::LinearInterpolateImageFunction<ImageT>::New();
 	auto reg = itk::ImageRegistrationMethod<ImageT, ImageT>::New();
 
-//	auto opt = itk::RegularStepGradientDescentOptimizer::New();
-//	auto opt = itk::VersorRigid3DTransformOptimizer::New();
-	auto opt = itk::LBFGSBOptimizer::New();
-//	opt->SetMinimumStepLength(minstep);
-//	opt->SetMaximumStepLength(maxstep);
-//	opt->SetRelaxationFactor(relax);
-	opt->SetMaximumNumberOfIterations(nstep);
-//	opt->SetGradientMagnitudeTolerance(TOL);
+	auto opt = itk::RegularStepGradientDescentOptimizer::New();
+	opt->SetMinimumStepLength(minstep);
+	opt->SetMaximumStepLength(maxstep);
+	opt->SetRelaxationFactor(relax);
+	opt->SetNumberOfIterations(nstep);
+	opt->SetGradientMagnitudeTolerance(TOL);
+	opt->MinimizeOn();
 
 	reg->SetOptimizer(opt);
 	reg->SetTransform(tfm);
