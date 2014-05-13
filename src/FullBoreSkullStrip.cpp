@@ -106,6 +106,43 @@ struct ParamLessEqual {
 	}
 };
 
+
+/**
+ * @brief Returns a continuous index that is the centroid of the image
+ *
+ * @param in
+ *
+ * @return 
+ */
+ImageT::PointType getCenter(ImageT::Pointer in)
+{
+	itk::ContinuousIndex<double, 3> index = {{0,0,0}};
+	ImageT::PointType opt;
+	itk::ImageRegionIteratorWithIndex<ImageT> it(in,in->GetRequestedRegion());
+	double mean = 0;
+	size_t nn = 0;
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it) {
+		mean += it.Get();
+		nn++;
+	}
+	mean /= nn;
+
+	nn = 0;
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it) {
+		if(it.Get() > mean) {
+			for(size_t ii=0 ; ii< 3; ii++) 
+				index[ii] += it.GetIndex()[ii];
+			nn++;
+		}
+	}
+
+	for(size_t ii=0 ; ii< 3; ii++) 
+		index[ii] /= nn;
+	in->TransformContinuousIndexToPhysicalPoint(index, opt);
+	return opt;
+}
+
+
 /******************************************
  * Main
  ******************************************/
@@ -132,10 +169,6 @@ int main(int argc, char** argv)
 	
 	TCLAP::SwitchArg a_moments("M", "moments-align", "Moments align first.", cmd);
 	
-	TCLAP::MultiArg<double> a_rigid_smooth("R", "rigid-smooth",
-			"Gaussian smoothing standard deviation during rigid "
-			"registration. Provide mutliple to schedule mutli-resolution "
-			"registration strategy.", false, "double", cmd);
 	TCLAP::MultiArg<double> a_affine_smooth("A", "affine-smooth",
 			"Gaussian smoothing standard deviation during affine "
 			"registration. Provide mutliple to schedule mutli-resolution "
@@ -154,18 +187,15 @@ int main(int argc, char** argv)
 	auto input = readImage<ImageT>(a_in.getValue());
 	auto atlas = readImage<ImageT>(a_atlas.getValue());
 	auto labelmap = readImage<LImageT>(a_atlas_label.getValue());
+
+	ImageT::PointType fixedCenter = getCenter(input);
+	ImageT::PointType movingCenter = getCenter(atlas);;
+
 	
-	vector<double> rigid_smooth(a_rigid_smooth.getValue());
 	vector<double> affine_smooth(a_affine_smooth.getValue());
 	vector<double> bspline_smooth(a_bspline_smooth.getValue());
+	std::set<itk::VersorRigid3DTransform<double>::ParametersType, ParamLessEqual> tested;
 
-	if(!a_rigid_smooth.isSet()) {
-		rigid_smooth.resize(3);
-		rigid_smooth[0] = 3;
-		rigid_smooth[1] = 1.5;
-		rigid_smooth[2] = 0.5;
-	}
-	
 	if(!a_affine_smooth.isSet()) {
 		affine_smooth.resize(3);
 		affine_smooth[0] = 3;
@@ -180,43 +210,9 @@ int main(int argc, char** argv)
 		bspline_smooth[2] = 0.5;
 	}
 
-	auto rigid = itk::VersorRigid3DTransform<double>::New();
-	if(a_moments.isSet()) {
-		auto init = itk::CenteredVersorTransformInitializer<ImageT, ImageT>::New();
-		init->SetTransform(rigid);
-		init->SetFixedImage(input);
-		init->SetMovingImage(atlas);
-		init->MomentsOn();
-		init->InitializeTransform();
-	}
-	
-	auto result = apply(rigid.GetPointer(), atlas, input);
-	writeImage<ImageT>("rigidinit.nii.gz", result);
-	
-	itk::Vector<double,3> xaxis((double)0);
-	itk::Vector<double,3> yaxis((double)0);
-	itk::Vector<double,3> zaxis((double)0);
-	itk::Vector<double,3> zero((double)0);
-	xaxis[0] = 1;
-	yaxis[1] = 1;
-	zaxis[2] = 1;
+	/* Affine registration, try all different directions, but do it at low res */
 
-	auto xrigid = itk::VersorRigid3DTransform<double>::New();
-	auto yrigid = itk::VersorRigid3DTransform<double>::New();
-	auto zrigid = itk::VersorRigid3DTransform<double>::New();
-	xrigid->SetFixedParameters(rigid->GetFixedParameters());
-	yrigid->SetFixedParameters(rigid->GetFixedParameters());
-	zrigid->SetFixedParameters(rigid->GetFixedParameters());
-	
-	xrigid->SetRotation(xaxis, PI/2.);
-	yrigid->SetRotation(yaxis, PI/2.);
-	zrigid->SetRotation(zaxis, PI/2.);
-	xrigid->SetTranslation(zero);
-	yrigid->SetTranslation(zero);
-	zrigid->SetTranslation(zero);
-
-	/* Rigid registration, try all different directions, but do it at low res */
-
+	itk::Vector<double, 3> zero((double)0);
 	ImageT::SizeType osz;
 	for(int ii = 0 ; ii < 3; ii++)
 		osz[ii] = input->GetRequestedRegion().GetSize()[ii]*
@@ -227,90 +223,60 @@ int main(int argc, char** argv)
 		osz[ii] = atlas->GetRequestedRegion().GetSize()[ii]*
 			input->GetSpacing()[ii]/5;
 	auto lr_atlas = resize<ImageT>(atlas, osz, tukey);
-
-	double bestval = 0;
-	auto bestparams = rigid->GetParameters();
-	std::set<itk::VersorRigid3DTransform<double>::ParametersType, ParamLessEqual> tested;
+				
+	auto affine = itk::AffineTransform<double, 3>::New();
+	affine->SetIdentity();
+	double bestval = -INFINITY;
+	auto bestparams = affine->GetParameters();
 	for(int xx=0; xx < 4; xx++) {
-		rigid->Compose(xrigid, true); // rotate 90degress
 		for(int yy=0; yy < 4; yy++) {
-			rigid->Compose(yrigid, true); //rotate 90 degress
 			for(int zz=0; zz < 4; zz++) {
-				rigid->Compose(zrigid, true); // rotate 90 degrees
+				affine->SetIdentity();
+				affine->SetTranslation(movingCenter-fixedCenter);
+				affine->Rotate(1,2,xx*PI/2.); // rotate 90degress
+				affine->Rotate(0,2,yy*PI/2.); // rotate 90degress
+				affine->Rotate(0,1,zz*PI/2.); // rotate 90degress
 
-				auto it = tested.insert(rigid->GetParameters());
+				auto it = tested.insert(affine->GetParameters());
 				if(!it.second) {
 					cerr << xx << "," << yy << "," << zz << endl;
 					cerr << "Count > 0" << endl;
 					continue;
 				}
 
-//				cerr << rigid->GetTranslation() << endl;
-//				cerr << rigid->GetMatrix() << endl;
-				cerr << rigid->GetParameters() << endl;
+				cerr << affine->GetParameters() << endl;
 				// perform full registration
-				double val = rigidReg(rigid, lr_atlas, lr_input, 4,
+				double val = affineReg(affine, lr_atlas, lr_input, 4,
 						true, 100, 0.01, .1, 0, 0.7, 0, 0.001);
-//				cerr << rigid->GetTranslation() << endl;
-//				cerr << rigid->GetMatrix() << endl;
-				cerr << rigid->GetParameters() << endl << endl;
+				cerr << affine->GetParameters() << endl << endl;
 				if(val > bestval) {
+					cerr << "New Best" << endl;
 					bestval = val;
-					bestparams = rigid->GetParameters();
+					bestparams = affine->GetParameters();
 				}
 			}
 		}
 	}
 	
-	result = apply(rigid.GetPointer(), atlas, input);
-	writeImage<ImageT>("rigidResult_ai.nii.gz", result);
-	
-	result = apply(rigid.GetPointer(), input, atlas);
-	writeImage<ImageT>("rigidResult_ia.nii.gz", result);
-	
-	result = apply(rigid.GetPointer(), lr_atlas, lr_input);
-	writeImage<ImageT>("rigidResult_l_ai.nii.gz", result);
-	
-	result = apply(rigid.GetPointer(), lr_input, lr_atlas);
-	writeImage<ImageT>("rigidResult_l_ia.nii.gz", result);
-
-	// perform real rigid registration with the best parameters from above
-	rigid->SetParameters(bestparams);
-	cerr << rigid->GetTranslation() << endl;
-	cerr << rigid->GetMatrix() << endl;
-	cerr << rigid->GetParameters() << endl;
-	// perform full registration
-	for(size_t ii=0; ii<rigid_smooth.size(); ii++) {
-		rigidReg(rigid, atlas, input, rigid_smooth[ii], 
-				true, 1000, 0.01, 1, 0, 0.4, 0, 0.01);
-	}
-	cerr << rigid->GetTranslation() << endl;
-	cerr << rigid->GetMatrix() << endl;
-	cerr << rigid->GetParameters() << endl;
-
 	/* Affine registration */
-	auto affine = itk::AffineTransform<double, 3>::New();
-	affine->SetTranslation(rigid->GetTranslation());
-	affine->SetMatrix(rigid->GetMatrix());
-	affine->SetCenter(rigid->GetCenter());
-
+	affine->SetParameters(bestparams);
 	for(int ii=0; affine_smooth.size(); ii++) {
 		affineReg(affine, atlas, input, affine_smooth[ii], 
-				true, 1000, 0.01, 1, 0, 0.4, 0, 0.01);
+				true, 1000, 0.001, 1, 0, 0.4, 0, 0.001);
 	}
 
 	atlas = apply(affine.GetPointer(), atlas, input);
 	labelmap = applyNN(affine.GetPointer(), labelmap, input);
 	
-	/* BSpline Registration */
-	auto bspline = itk::BSplineTransform<double, 3, 3>::New();
-	for(int ii=0; bspline_smooth.size(); ii++) {
-		bSplineReg(bspline, atlas, input, bspline_smooth[ii], 
-				true, 1000, 0.01, 1, 0, 0.4, 0, 0.01);
-	}
-	atlas = apply(bspline.GetPointer(), atlas, input);
-	labelmap = applyNN(bspline.GetPointer(), labelmap, input);
-
+//	/* BSpline Registration */
+//	auto bspline = itk::BSplineTransform<double, 3, 3>::New();
+//	for(int ii=0; bspline_smooth.size(); ii++) {
+//		bSplineReg(bspline, atlas, input, bspline_smooth[ii], 
+//				true, 1000, 0.01, 1, 0, 0.4, 0, 0.01);
+//	}
+//	atlas = apply(bspline.GetPointer(), atlas, input);
+//	labelmap = applyNN(bspline.GetPointer(), labelmap, input);
+//
 	writeImage<ImageT>(a_out.getValue(), atlas);
 	writeImage<LImageT>(a_outl.getValue(), labelmap);
 	
@@ -406,34 +372,13 @@ double affineReg(itk::AffineTransform<double, 3>::Pointer tfm,
 	auto interp = itk::LinearInterpolateImageFunction<ImageT>::New();
 	auto reg = itk::ImageRegistrationMethod<ImageT, ImageT>::New();
 
-//	auto opt = itk::RegularStepGradientDescentOptimizer::New();
-//	auto opt = itk::VersorRigid3DTransformOptimizer::New();
-	auto opt = itk::LBFGSBOptimizer::New();
-	itk::LBFGSBOptimizer::BoundSelectionType bsel(tfm->GetNumberOfParameters());
-  	itk::LBFGSBOptimizer::BoundValueType bnull(tfm->GetNumberOfParameters());
-	bsel.Fill( 0 );
-	bnull.Fill( 0.0 );
-	opt->SetBoundSelection(bsel);
-	opt->SetUpperBound(bnull);
-	opt->SetLowerBound(bnull);
-	opt->SetCostFunctionConvergenceFactor( 1e+7);
-	opt->SetProjectedGradientTolerance( 1e-6 );
-	opt->SetMaximumNumberOfIterations(200);
-	opt->SetMaximumNumberOfEvaluations(30);
-	opt->SetMaximumNumberOfCorrections(5);
-//	opt->SetMinimumStepLength(minstep);
-//	opt->SetMaximumStepLength(maxstep);
-//	opt->SetRelaxationFactor(relax);
-	opt->SetMaximumNumberOfIterations(nstep);
-//	opt->SetGradientMagnitudeTolerance(TOL);
-	itk::Array<double> scales(6);
-
-	//rotation
-	for(int ii = 0 ; ii < 3; ii++)
-		scales[ii] = 1;
-	//translation
-	for(int ii = 3 ; ii < 6; ii++)
-		scales[ii] = .0001;
+	auto opt = itk::RegularStepGradientDescentOptimizer::New();
+	opt->SetMinimumStepLength(minstep);
+	opt->SetMaximumStepLength(maxstep);
+	opt->SetRelaxationFactor(relax);
+	opt->SetNumberOfIterations(nstep);
+	opt->SetGradientMagnitudeTolerance(TOL);
+	opt->MinimizeOn();
 
 	reg->SetOptimizer(opt);
 	reg->SetTransform(tfm);
@@ -458,7 +403,7 @@ double affineReg(itk::AffineTransform<double, 3>::Pointer tfm,
   
 	double value = INFINITY;
 	try {
-		std::cerr << "Performing Rigid Registration..."; 
+		std::cerr << "Performing Affine Registration..."; 
 		reg->Update();
 		value = reg ->GetMetric()->GetValue(reg->GetLastTransformParameters());
 		cerr << " (" << value << ") " << opt->GetStopConditionDescription() << endl;
