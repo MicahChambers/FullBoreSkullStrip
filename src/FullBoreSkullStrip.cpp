@@ -201,32 +201,18 @@ int main(int argc, char** argv)
 
 	if(!a_affine_smooth.isSet()) {
 		affine_smooth.resize(3);
-		affine_smooth[0] = 3;
-		affine_smooth[1] = 1.5;
-		affine_smooth[2] = 0.5;
+		affine_smooth[0] = 5;
+		affine_smooth[1] = 3; 
+		affine_smooth[2] = 1;
 	}
 	
 	if(!a_bspline_smooth.isSet()) {
 		bspline_smooth.resize(3);
-		bspline_smooth[0] = 3;
-		bspline_smooth[1] = 1.5;
-		bspline_smooth[2] = 0.5;
+		bspline_smooth[0] = 5;
+		bspline_smooth[1] = 3;
+		bspline_smooth[2] = 1;
 	}
 	
-	/******************************************************
-	 * Low Resolution
-	 *****************************************************/
-	ImageT::SizeType osz;
-	for(int ii = 0 ; ii < 3; ii++)
-		osz[ii] = input->GetRequestedRegion().GetSize()[ii]*
-			input->GetSpacing()[ii]/5;
-	auto lr_input = resize<ImageT>(input, osz, tukey);
-
-	for(int ii = 0 ; ii < 3; ii++)
-		osz[ii] = atlas->GetRequestedRegion().GetSize()[ii]*
-			input->GetSpacing()[ii]/5;
-	auto lr_atlas = resize<ImageT>(atlas, osz, tukey);
-
 	/* Affine registration, try all different directions, but do it at low res */
 	auto affine = itk::AffineTransform<double, 3>::New();
 	if(a_reorient.isSet()) {
@@ -250,7 +236,7 @@ int main(int argc, char** argv)
 
 					cerr << affine->GetParameters() << endl;
 					// perform full registration
-					double val = affineReg(affine, lr_atlas, lr_input, 4,
+					double val = affineReg(affine, atlas, input, 5,
 							true, 100, 0.01, .1, 0, 0.7, 0, 0.001);
 					cerr << affine->GetParameters() << endl << endl;
 					if(val > bestval) {
@@ -269,15 +255,10 @@ int main(int argc, char** argv)
 	
 	/* Affine registration */
 	for(size_t ii=0; ii < affine_smooth.size(); ii++) {
-		affineReg(affine, lr_atlas, lr_input, affine_smooth[ii], 
-				true, 1000, 0.001, 1, 0, 0.4, 0, 0.001);
-	}
-	
-	for(size_t ii=0; ii < affine_smooth.size(); ii++) {
 		affineReg(affine, atlas, input, affine_smooth[ii], 
 				true, 1000, 0.001, 1, 0, 0.4, 0, 0.001);
 	}
-
+	
 	atlas = apply(affine.GetPointer(), atlas, input);
 	labelmap = applyNN(affine.GetPointer(), labelmap, input);
 	
@@ -319,8 +300,20 @@ double bSplineReg(itk::BSplineTransform<double, 3, 3>::Pointer tfm,
 			int nbins, double relax, int nsamp, double TOL)
 {
 	if(sd > 0) {
-		source = gaussianSmooth<ImageT>(source, sd);
-		target = gaussianSmooth<ImageT>(target, sd);
+		/******************************************************
+		 * Low Resolution
+		 *****************************************************/
+		ImageT::SizeType osz;
+		for(int ii = 0 ; ii < 3; ii++)
+			osz[ii] = source->GetRequestedRegion().GetSize()[ii]*
+				source->GetSpacing()[ii]/sd;
+		source = resize<ImageT>(source, osz, gaussKern);
+
+		// match the spacing
+		for(int ii = 0 ; ii < 3; ii++)
+			osz[ii] = target->GetRequestedRegion().GetSize()[ii]*
+				source->GetSpacing()[ii];
+		target = resize<ImageT>(target, osz, gaussKern);
 	}
 
 	auto interp = itk::LinearInterpolateImageFunction<ImageT>::New();
@@ -379,8 +372,20 @@ double affineReg(itk::AffineTransform<double, 3>::Pointer tfm,
 			int nbins, double relax, int nsamp, double TOL)
 {
 	if(sd > 0) {
-		source = gaussianSmooth<ImageT>(source, sd);
-		target = gaussianSmooth<ImageT>(target, sd);
+		/******************************************************
+		 * Low Resolution
+		 *****************************************************/
+		ImageT::SizeType osz;
+		for(int ii = 0 ; ii < 3; ii++)
+			osz[ii] = source->GetRequestedRegion().GetSize()[ii]*
+				source->GetSpacing()[ii]/sd;
+		source = resize<ImageT>(source, osz, gaussKern);
+
+		// match the spacing
+		for(int ii = 0 ; ii < 3; ii++)
+			osz[ii] = target->GetRequestedRegion().GetSize()[ii]*
+				source->GetSpacing()[ii];
+		target = resize<ImageT>(target, osz, gaussKern);
 	}
 
 	auto interp = itk::LinearInterpolateImageFunction<ImageT>::New();

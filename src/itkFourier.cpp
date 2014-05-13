@@ -51,7 +51,6 @@ double hann(double n, double N)
 	return .5*(1-cos(2*PI*n/(N-1)));
 }
 
-#include <iostream> 
 double gaussKern(double n, double N)
 {
 	double mu = (N-1)/2;

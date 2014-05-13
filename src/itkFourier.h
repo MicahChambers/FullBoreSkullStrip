@@ -47,20 +47,31 @@ typename T::Pointer padImage(typename T::Pointer in, int minpad[T::ImageDimensio
 
 	for(unsigned int ii = 0 ; ii < NDIM; ii++) {
 		int tmp = roundup(sz[ii]+minpad[ii], bases);
+#ifndef NDEBUG
 		std::cerr << "Dim " << ii << " size " << sz[ii] << "rounded to " << tmp << std::endl;
+#endif //NDEBUG
 		lpad[ii] = (tmp - sz[ii])/2;
 		upad[ii] = tmp - lpad[ii]-sz[ii];
+#ifndef NDEBUG
 		std::cerr << lpad << ", " << upad << std::endl;
+#endif //NDEBUG
 	}
 
+#ifndef NDEBUG
 	std::cerr << lpad << ", " << upad << std::endl;
+#endif //NDEBUG
 	padFilter->SetPadLowerBound(lpad);
 	padFilter->SetPadUpperBound(upad);
 	
 	try {
+
+#ifndef NDEBUG
 		std::cout << "Padding..." ;
+#endif//NDEBUG
 		padFilter->Update();
+#ifndef NDEBUG
 		std::cout << "Done" << std::endl;
+#endif//NDEBUG
 	} catch( itk::ExceptionObject & error ) {
 		std::cerr << "Error: " << error << std::endl;
 		return NULL;
@@ -96,9 +107,13 @@ typename C::Pointer fft(typename T::Pointer input)
 	fft->SetInput(input);
 
 	try {
+#ifndef NDEBUG
 		std::cout << "Computing FFT..." ;
+#endif //NDEBUG
 		fft->Update();
+#ifndef NDEBUG
 		std::cout << "Done" << std::endl;
+#endif //NDEBUG
 	} catch( itk::ExceptionObject & error ) {
 		std::cerr << "Error: " << error << std::endl;
 		return NULL;
@@ -113,9 +128,13 @@ typename T::Pointer ifft(typename C::Pointer input)
 	auto ifft = itk::InverseFFTImageFilter<C, T>::New();
 	ifft->SetInput(input);
 	try {
+#ifndef NDEBUG
 		std::cout << "Computing iFFT..." ;
+#endif// NDEBUG
 		ifft->Update();
+#ifndef NDEBUG
 		std::cout << "Done" << std::endl;
+#endif//NDEBUG
 	} catch( itk::ExceptionObject & error ) {
 		std::cerr << "Error: " << error << std::endl;
 		return NULL;
