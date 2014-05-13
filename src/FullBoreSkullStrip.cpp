@@ -24,28 +24,29 @@ along with the Neural Programs Library.  If not, see
 #include "itkFourier.h"
 RegisterIO REG;
 
-
 #include <itkNearestNeighborInterpolateImageFunction.h>
-#include "itkGradientDescentOptimizer.h"
+#include <itkResampleImageFilter.h>
+#include <itkCastImageFilter.h>
+//#include "itkGradientDescentOptimizer.h"
 #include <itkBSplineTransform.h>
 #include "itkMutualInformationImageToImageMetric.h"
-#include "itkMultiResolutionImageRegistrationMethod.h"
+//#include "itkMultiResolutionImageRegistrationMethod.h"
 #include "itkAffineTransform.h"
 #include "itkRegularStepGradientDescentOptimizer.h"
-#include "itkGradientDescentOptimizer.h"
+//#include "itkGradientDescentOptimizer.h"
 #include "itkMattesMutualInformationImageToImageMetric.h"
 #include "itkNormalizedCorrelationImageToImageMetric.h"
-#include "itkMutualInformationImageToImageMetric.h"
+//#include "itkMutualInformationImageToImageMetric.h"
 #include "itkImageRegistrationMethod.h"
-#include "itkVersorRigid3DTransformOptimizer.h"
-#include "itkVersorRigid3DTransform.h"
-#include "itkCenteredVersorTransformInitializer.h"
+//#include "itkVersorRigid3DTransformOptimizer.h"
+//#include "itkVersorRigid3DTransform.h"
+//#include "itkCenteredVersorTransformInitializer.h"
 
 #include <itkImageFileWriter.h>
 #include <itkImageFileReader.h>
 
 #include <itkDiscreteGaussianImageFilter.h>
-#include <itkLBFGSBOptimizer.h>
+//#include <itkLBFGSBOptimizer.h>
 
 #include <cmath>
 
@@ -67,11 +68,11 @@ double affineReg(itk::AffineTransform<double, 3>::Pointer tfm,
 			int nstep, double minstep, double maxstep,
 			int nbins, double relax, int nsamp, double TOL);
 
-double rigidReg(itk::VersorRigid3DTransform<double>::Pointer tfm,
-			ImageT::Pointer source, ImageT::Pointer target, 
-			double sd, bool samecontrast,
-			int nstep, double minstep, double maxstep,
-			int nbins, double relax, int nsamp, double TOL);
+//double rigidReg(itk::VersorRigid3DTransform<double>::Pointer tfm,
+//			ImageT::Pointer source, ImageT::Pointer target, 
+//			double sd, bool samecontrast,
+//			int nstep, double minstep, double maxstep,
+//			int nbins, double relax, int nsamp, double TOL);
 
 ImageT::Pointer apply(itk::Transform<double,3,3>::Pointer tfm, 
 		ImageT::Pointer source, ImageT::Pointer target);
@@ -90,8 +91,8 @@ template <typename T>
 typename T::Pointer readImage(std::string name);
 
 struct ParamLessEqual {
-	bool operator()(const itk::VersorRigid3DTransform<double>::ParametersType& lhs,
-			const itk::VersorRigid3DTransform<double>::ParametersType& rhs)  const
+	bool operator()(const itk::Array<double>& lhs,
+			const itk::Array<double>& rhs)  const
 	{
 		const double TOL = 0.0000001;
 		for(size_t ii=0 ;ii<lhs.GetSize(); ii++) {
@@ -196,7 +197,7 @@ int main(int argc, char** argv)
 	
 	vector<double> affine_smooth(a_affine_smooth.getValue());
 	vector<double> bspline_smooth(a_bspline_smooth.getValue());
-	std::set<itk::VersorRigid3DTransform<double>::ParametersType, ParamLessEqual> tested;
+	std::set<itk::Array<double>, ParamLessEqual> tested;
 
 	if(!a_affine_smooth.isSet()) {
 		affine_smooth.resize(3);
@@ -211,23 +212,24 @@ int main(int argc, char** argv)
 		bspline_smooth[1] = 1.5;
 		bspline_smooth[2] = 0.5;
 	}
+	
+	/******************************************************
+	 * Low Resolution
+	 *****************************************************/
+	ImageT::SizeType osz;
+	for(int ii = 0 ; ii < 3; ii++)
+		osz[ii] = input->GetRequestedRegion().GetSize()[ii]*
+			input->GetSpacing()[ii]/5;
+	auto lr_input = resize<ImageT>(input, osz, tukey);
 
+	for(int ii = 0 ; ii < 3; ii++)
+		osz[ii] = atlas->GetRequestedRegion().GetSize()[ii]*
+			input->GetSpacing()[ii]/5;
+	auto lr_atlas = resize<ImageT>(atlas, osz, tukey);
+
+	/* Affine registration, try all different directions, but do it at low res */
 	auto affine = itk::AffineTransform<double, 3>::New();
 	if(a_reorient.isSet()) {
-		/* Affine registration, try all different directions, but do it at low res */
-
-		itk::Vector<double, 3> zero((double)0);
-		ImageT::SizeType osz;
-		for(int ii = 0 ; ii < 3; ii++)
-			osz[ii] = input->GetRequestedRegion().GetSize()[ii]*
-				input->GetSpacing()[ii]/5;
-		auto lr_input = resize<ImageT>(input, osz, tukey);
-
-		for(int ii = 0 ; ii < 3; ii++)
-			osz[ii] = atlas->GetRequestedRegion().GetSize()[ii]*
-				input->GetSpacing()[ii]/5;
-		auto lr_atlas = resize<ImageT>(atlas, osz, tukey);
-
 		double bestval = -INFINITY;
 		auto bestparams = affine->GetParameters();
 		for(int xx=0; xx < 4; xx++) {
@@ -266,7 +268,12 @@ int main(int argc, char** argv)
 	}
 	
 	/* Affine registration */
-	for(int ii=0; affine_smooth.size(); ii++) {
+	for(size_t ii=0; ii < affine_smooth.size(); ii++) {
+		affineReg(affine, lr_atlas, lr_input, affine_smooth[ii], 
+				true, 1000, 0.001, 1, 0, 0.4, 0, 0.001);
+	}
+	
+	for(size_t ii=0; ii < affine_smooth.size(); ii++) {
 		affineReg(affine, atlas, input, affine_smooth[ii], 
 				true, 1000, 0.001, 1, 0, 0.4, 0, 0.001);
 	}
@@ -350,10 +357,12 @@ double bSplineReg(itk::BSplineTransform<double, 3, 3>::Pointer tfm,
   
 	double value = INFINITY;
 	try {
-		std::cerr << "Performing Rigid Registration..."; 
+		std::cerr << "Performing BSpline Registration..."; 
+		double before = reg->GetMetric()->GetValue(tfm->GetParameters());
 		reg->Update();
 		value = reg ->GetMetric()->GetValue(reg->GetLastTransformParameters());
-		cerr << " (" << value << ") " << opt->GetStopConditionDescription() << endl;
+		cerr << " (" << before << ") -> (" << value << ") " 
+				<< opt->GetStopConditionDescription() << endl;
 	} catch( itk::ExceptionObject & err ) {
 		std::cerr<< "ExceptionObject" << std::endl << err << std::endl;
 		return -INFINITY;
@@ -410,8 +419,10 @@ double affineReg(itk::AffineTransform<double, 3>::Pointer tfm,
 	try {
 		std::cerr << "Performing Affine Registration..."; 
 		reg->Update();
+		double before = reg->GetMetric()->GetValue(reg->GetInitialTransformParameters());
 		value = reg ->GetMetric()->GetValue(reg->GetLastTransformParameters());
-		cerr << " (" << value << ") " << opt->GetStopConditionDescription() << endl;
+		cerr << " (" << before << ") -> (" << value << ") " 
+				<< opt->GetStopConditionDescription() << endl;
 	} catch( itk::ExceptionObject & err ) {
 		std::cerr<< "ExceptionObject" << std::endl << err << std::endl;
 		return -INFINITY;
@@ -421,71 +432,71 @@ double affineReg(itk::AffineTransform<double, 3>::Pointer tfm,
 	return -value;
 }
 
-double rigidReg(itk::VersorRigid3DTransform<double>::Pointer tfm,
-		itk::Image<float,3>::Pointer source, itk::Image<float,3>::Pointer target, 
-		double sd, bool samecontrast,
-		int nstep, double minstep, double maxstep,
-		int nbins, double relax, int nsamp, double TOL)
-{
-	if(sd > 0) {
-		source = gaussianSmooth<ImageT>(source, sd);
-		target = gaussianSmooth<ImageT>(target, sd);
-	}
-
-	auto interp = itk::LinearInterpolateImageFunction<ImageT>::New();
-	auto reg = itk::ImageRegistrationMethod<ImageT, ImageT>::New();
-
-	auto opt = itk::VersorRigid3DTransformOptimizer::New();
-	opt->SetMinimumStepLength(minstep);
-	opt->SetMaximumStepLength(maxstep);
-	opt->SetRelaxationFactor(relax);
-	opt->SetNumberOfIterations(nstep);
-	opt->SetGradientMagnitudeTolerance(TOL);
-	opt->MinimizeOn();
-	itk::Array<double> scales(6);
-
-	//rotation
-	for(int ii = 0 ; ii < 3; ii++)
-		scales[ii] = 1;
-	//translation
-	for(int ii = 3 ; ii < 6; ii++)
-		scales[ii] = .001;
-
-	reg->SetOptimizer(opt);
-	reg->SetTransform(tfm);
-	reg->SetInitialTransformParameters(tfm->GetParameters());
-	reg->SetInterpolator(interp);
-
-	if(samecontrast) {
-		std::cerr << "Normalized correlation metric...";
-		auto metric = itk::NormalizedCorrelationImageToImageMetric<ImageT, ImageT>::New();
-		reg->SetMetric(metric);
-	} else {
-		std::cerr << "Mutual Information metric..."; 
-		auto metric = itk::MattesMutualInformationImageToImageMetric<ImageT, ImageT>::New();
-		reg->SetMetric(metric);
-		metric->SetNumberOfSpatialSamples(nsamp);
-		metric->SetNumberOfHistogramBins(nbins);
-	}
-	
-	reg->SetFixedImage(target);
-	reg->SetMovingImage(source);
-	reg->SetFixedImageRegion(target->GetLargestPossibleRegion());
-  
-	double value = INFINITY;
-	try {
-		std::cerr << "Performing Rigid Registration..."; 
-		reg->Update();
-		value = reg ->GetMetric()->GetValue(reg->GetLastTransformParameters());
-		cerr << " (" << value << ") " << opt->GetStopConditionDescription() << endl;
-	} catch( itk::ExceptionObject & err ) {
-		std::cerr<< "ExceptionObject" << std::endl << err << std::endl;
-		return -INFINITY;
-	}
-
-	tfm->SetParameters(reg->GetLastTransformParameters());
-	return -value;
-}
+//double rigidReg(itk::VersorRigid3DTransform<double>::Pointer tfm,
+//		itk::Image<float,3>::Pointer source, itk::Image<float,3>::Pointer target, 
+//		double sd, bool samecontrast,
+//		int nstep, double minstep, double maxstep,
+//		int nbins, double relax, int nsamp, double TOL)
+//{
+//	if(sd > 0) {
+//		source = gaussianSmooth<ImageT>(source, sd);
+//		target = gaussianSmooth<ImageT>(target, sd);
+//	}
+//
+//	auto interp = itk::LinearInterpolateImageFunction<ImageT>::New();
+//	auto reg = itk::ImageRegistrationMethod<ImageT, ImageT>::New();
+//
+//	auto opt = itk::VersorRigid3DTransformOptimizer::New();
+//	opt->SetMinimumStepLength(minstep);
+//	opt->SetMaximumStepLength(maxstep);
+//	opt->SetRelaxationFactor(relax);
+//	opt->SetNumberOfIterations(nstep);
+//	opt->SetGradientMagnitudeTolerance(TOL);
+//	opt->MinimizeOn();
+//	itk::Array<double> scales(6);
+//
+//	//rotation
+//	for(int ii = 0 ; ii < 3; ii++)
+//		scales[ii] = 1;
+//	//translation
+//	for(int ii = 3 ; ii < 6; ii++)
+//		scales[ii] = .001;
+//
+//	reg->SetOptimizer(opt);
+//	reg->SetTransform(tfm);
+//	reg->SetInitialTransformParameters(tfm->GetParameters());
+//	reg->SetInterpolator(interp);
+//
+//	if(samecontrast) {
+//		std::cerr << "Normalized correlation metric...";
+//		auto metric = itk::NormalizedCorrelationImageToImageMetric<ImageT, ImageT>::New();
+//		reg->SetMetric(metric);
+//	} else {
+//		std::cerr << "Mutual Information metric..."; 
+//		auto metric = itk::MattesMutualInformationImageToImageMetric<ImageT, ImageT>::New();
+//		reg->SetMetric(metric);
+//		metric->SetNumberOfSpatialSamples(nsamp);
+//		metric->SetNumberOfHistogramBins(nbins);
+//	}
+//	
+//	reg->SetFixedImage(target);
+//	reg->SetMovingImage(source);
+//	reg->SetFixedImageRegion(target->GetLargestPossibleRegion());
+//  
+//	double value = INFINITY;
+//	try {
+//		std::cerr << "Performing Rigid Registration..."; 
+//		reg->Update();
+//		value = reg ->GetMetric()->GetValue(reg->GetLastTransformParameters());
+//		cerr << " (" << value << ") " << opt->GetStopConditionDescription() << endl;
+//	} catch( itk::ExceptionObject & err ) {
+//		std::cerr<< "ExceptionObject" << std::endl << err << std::endl;
+//		return -INFINITY;
+//	}
+//
+//	tfm->SetParameters(reg->GetLastTransformParameters());
+//	return -value;
+//}
 
 
 ImageT::Pointer apply(itk::Transform<double,3,3>::Pointer tfm, 
