@@ -56,12 +56,29 @@ double gaussKern(double n, double N)
 	double mu = (N-1)/2;
 	
 	// mu is the radius, so in the standard normal
-	double scale = 3;
+	double scale = 2;
 	double sigma = mu/(2*scale);
 	double sigmasq = sigma*sigma;
 
 	// n == 0 -> e^0 -> 1
 	return exp(-0.5*(n-mu)*(n-mu)/sigmasq);
+}
+
+double DoGKern(double n, double N)
+{
+	double mu = (N-1)/2;
+	
+	// mu is the radius, so in the standard normal
+	double scale1 = 1;
+	double sigma1 = mu/(2*scale1);
+	double sigmasq1 = sigma1*sigma1;
+	
+	double scale2 = 5;
+	double sigma2 = mu/(2*scale2);
+	double sigmasq2 = sigma2*sigma2;
+
+	// n == 0 -> e^0 -> 1
+	return exp(-0.5*(n-mu)*(n-mu)/sigmasq1)-exp(-0.5*(n-mu)*(n-mu)/sigmasq2);
 }
 
 double tukey(double n, double N)

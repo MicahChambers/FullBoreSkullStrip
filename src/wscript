@@ -1,9 +1,15 @@
-
 def build(bld):
+    bld(name = 'tclap', export_includes = ['deps/tclap/include'])
+
     bld.program(target = 'FullBoreSkullStrip', 
-                source = 'FullBoreSkullStrip.cpp', 
-                use = 'registerIO tclap itkFourier')
-    
+            source = 'FullBoreSkullStrip.cpp', 
+            use = 'registerIO tclap skullStripLib')
+
     # this is to register IO the way CMAKE does for ITK normally
-    bld.stlib(target = 'registerIO', source = 'registerIO.cpp', use = 'ITK')
-    bld.stlib(target = 'itkFourier', source = 'itkFourier.cpp', use = 'ITK')
+    bld.shlib(target = 'registerIO', source = 'registerIO.cpp', use = 'ITK')
+    bld.shlib(target = 'itkFourier', source = 'itkFourier.cpp', use = 'ITK')
+    bld.shlib(target = 'skullStripLib', source = 'skullStrip.cpp', 
+			use = 'ITK alglib biasCorrectLib itkFourier ')
+    bld.shlib(target = 'biasCorrectLib', source = 'biasCorrect.cpp', use = 'ITK alglib')
+    bld.shlib(target = 'alglib', source = bld.path.ant_glob('deps/alglib/src/*.cpp'),
+            export_includes = 'deps/alglib/src')
