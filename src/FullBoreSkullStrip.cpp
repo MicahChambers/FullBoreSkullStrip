@@ -136,7 +136,6 @@ int main(int argc, char** argv)
 		bspline_smooth.resize(3);
 		bspline_smooth[0] = 3;
 		bspline_smooth[1] = 2;
-		bspline_smooth[2] = 1;
 	}
 	
 	/* Affine registration, try all different directions, but do it at low res */
@@ -200,7 +199,7 @@ int main(int argc, char** argv)
 	writeImage<ImageT>("affine_init.nii.gz", tmp);
 	for(size_t ii=0; ii < affine_smooth.size(); ii++) {
 		affineReg(affine, atlas, input, affine_smooth[ii], 
-				true, 5000, 0.0001, .1, 0, 0.8, 0, 0.001);
+				true, 8000, 0.0001, .1, 0, 0.8, 0, 0.001);
 
 		std::ostringstream oss;
 		oss << "affine_" << affine_smooth[ii] << ".nii.gz";
@@ -211,6 +210,9 @@ int main(int argc, char** argv)
 	atlas = apply(affine.GetPointer(), atlas, input);
 	labelmap = applyNN(affine.GetPointer(), labelmap, input);
 	
+	// probably
+	// do bias field correction based on the atlas
+
 	/* BSpline Registration */
 	auto bspline = itk::BSplineTransform<double, 3, 3>::New();
 	for(int ii=0; bspline_smooth.size(); ii++) {
