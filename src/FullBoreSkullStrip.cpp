@@ -86,20 +86,34 @@ int main(int argc, char** argv)
 			"Gaussian smoothing standard deviation during rigid "
 			"registration. Provide mutliple to schedule mutli-resolution "
 			"registration strategy.", false, "double", cmd);
-	TCLAP::SwitchArg a_norigid("", "no-rigid",
-			"No rigid registration step.", cmd);
+	TCLAP::ValueArg<double> a_rigidsteps("", "rigid-steps",
+			"Maximum number of rigid steps.",  false, 1000, "iters", cmd);
+	TCLAP::ValueArg<double> a_rigidminstep("", "rigid-min",
+			"Minimum step size in rigid registration.", false,  0.0001, "step", cmd);
+	TCLAP::ValueArg<double> a_rigidmaxstep("", "rigid-max",
+			"Maximimum step size in rigid registration.", false, 0.01, "step",  cmd);
+
 	TCLAP::MultiArg<double> a_affine_smooth("A", "affine-smooth",
 			"Gaussian smoothing standard deviation during affine "
 			"registration. Provide mutliple to schedule mutli-resolution "
 			"registration strategy.", false, "double", cmd);
-	TCLAP::SwitchArg a_noaffine("", "no-affine",
-			"No affine registration step.", cmd);
+	TCLAP::ValueArg<double> a_affinesteps("", "affine-steps",
+			"Maximum number of affine steps.", false, 100000, "iters", cmd);
+	TCLAP::ValueArg<double> a_affineminstep("", "affine-min",
+			"Minimum step size in affine registration.", false, 0.0001, "step", cmd);
+	TCLAP::ValueArg<double> a_affinemaxstep("", "affine-max",
+			"Maximimum step size in affine registration.", false, 0.01, "step", cmd);
+
 	TCLAP::MultiArg<double> a_bspline_smooth("B", "bspline-smooth",
 			"Gaussian smoothing standard deviation during bspline "
 			"registration. Provide mutliple to schedule mutli-resolution "
 			"registration strategy.", false, "double", cmd);
-	TCLAP::SwitchArg a_nobspline("", "no-bspline",
-			"No bspline registration step.", cmd);
+	TCLAP::ValueArg<double> a_bsplinesteps("", "bspline-steps",
+			"Maximum number of bspline steps.", false, 1000, "iters", cmd);
+	TCLAP::ValueArg<double> a_bsplineminstep("", "bspline-min",
+			"Minimum step size in bspline registration.", false, 0.0001, "step", cmd);
+	TCLAP::ValueArg<double> a_bsplinemaxstep("", "bspline-max",
+			"Maximimum step size in bspline registration.", false, 0.01, "step", cmd);
 	
 	TCLAP::SwitchArg  a_debug("D", "debug",
 			"Write out intermediate images in the current directory "
@@ -184,17 +198,16 @@ int main(int argc, char** argv)
 		rigid->SetCenter(fixedCenter);
 	}
 	
-	if(!a_norigid.isSet()) {
-		/* Rigid registration */
-		for(size_t ii=0; ii < rigid_smooth.size(); ii++) {
-			rigidReg(rigid, atlas, input, rigid_smooth[ii], 
-					true, 5000, 0.0001, .1, 0, 0.7, 0, 0.0001);
+	/* Rigid registration */
+	for(size_t ii=0; ii < rigid_smooth.size(); ii++) {
+		rigidReg(rigid, atlas, input, rigid_smooth[ii], 
+				true, a_rigidsteps.getValue(), a_rigidminstep.getValue(), 
+				a_rigidmaxstep.getValue(), 0, 0.7, 0, 0.0001);
 
-			std::ostringstream oss;
-			oss << "rigid_" << rigid_smooth[ii] << ".nii.gz";
-			auto tmp = apply(rigid.GetPointer(), atlas, input);
-			writeImage<ImageT>(oss.str(), tmp);
-		}
+		std::ostringstream oss;
+		oss << "rigid_" << rigid_smooth[ii] << ".nii.gz";
+		auto tmp = apply(rigid.GetPointer(), atlas, input);
+		writeImage<ImageT>(oss.str(), tmp);
 	}
 	
 	/* Affine registration */
@@ -204,25 +217,24 @@ int main(int argc, char** argv)
 	affine->SetTranslation(rigid->GetTranslation());
 	affine->SetCenter(rigid->GetCenter());
 
-	if(!a_noaffine.isSet()) {
+	auto tmp = apply(affine.GetPointer(), atlas, input);
+	writeImage<ImageT>("affine_init.nii.gz", tmp);
+	for(size_t ii=0; ii < affine_smooth.size(); ii++) {
+		affineReg(affine, atlas, input, affine_smooth[ii], 
+				true, a_affinesteps.getValue(), a_affineminstep.getValue(),
+				a_affinemaxstep.getValue(), 0, 0.8, 0, 0.001);
+
+		std::ostringstream oss;
+		oss << "affine_" << affine_smooth[ii] << ".nii.gz";
 		auto tmp = apply(affine.GetPointer(), atlas, input);
-		writeImage<ImageT>("affine_init.nii.gz", tmp);
-		for(size_t ii=0; ii < affine_smooth.size(); ii++) {
-			affineReg(affine, atlas, input, affine_smooth[ii], 
-					true, 100000, 0.0001, .1, 0, 0.8, 0, 0.001);
-
-			std::ostringstream oss;
-			oss << "affine_" << affine_smooth[ii] << ".nii.gz";
-			auto tmp = apply(affine.GetPointer(), atlas, input);
-			writeImage<ImageT>(oss.str(), tmp);
-		}
-
-		atlas = apply(affine.GetPointer(), atlas, input);
-		labelmap = applyNN(affine.GetPointer(), labelmap, input);
-		
-		writeImage<ImageT>("bspline_init.nii.gz", atlas);
-		writeImage<ImageT>("bspline_target.nii.gz", input);
+		writeImage<ImageT>(oss.str(), tmp);
 	}
+
+	atlas = apply(affine.GetPointer(), atlas, input);
+	labelmap = applyNN(affine.GetPointer(), labelmap, input);
+
+	writeImage<ImageT>("bspline_init.nii.gz", atlas);
+	writeImage<ImageT>("bspline_target.nii.gz", input);
 		
 	
 	// probably
@@ -245,19 +257,18 @@ int main(int argc, char** argv)
 		bspinit->InitializeTransform();
 	}
 
-	if(!a_nobspline.isSet()) {
-		for(int ii=0; bspline_smooth.size(); ii++) {
-			bSplineReg(bspline, atlas, input, bspline_smooth[ii], 
-					true, 1000, 0.001, 1, 0, 0.4, 0, 0.0001);
+	for(int ii=0; bspline_smooth.size(); ii++) {
+		bSplineReg(bspline, atlas, input, bspline_smooth[ii], 
+				true, a_bsplinesteps.getValue(), a_bsplineminstep.getValue(),
+				a_bsplinemaxstep.getValue(), 0, 0.4, 0, 0.0001);
 
-			std::ostringstream oss;
-			oss << "bspline_" << affine_smooth[ii] << ".nii.gz";
-			auto tmp = apply(bspline.GetPointer(), atlas, input);
-			writeImage<ImageT>(oss.str(), tmp);
-		}
-		atlas = apply(bspline.GetPointer(), atlas, input);
-		labelmap = applyNN(bspline.GetPointer(), labelmap, input);
+		std::ostringstream oss;
+		oss << "bspline_" << affine_smooth[ii] << ".nii.gz";
+		auto tmp = apply(bspline.GetPointer(), atlas, input);
+		writeImage<ImageT>(oss.str(), tmp);
 	}
+	atlas = apply(bspline.GetPointer(), atlas, input);
+	labelmap = applyNN(bspline.GetPointer(), labelmap, input);
 
 	
 	if(a_out.isSet()) {
