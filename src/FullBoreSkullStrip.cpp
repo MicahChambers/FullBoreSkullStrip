@@ -21,6 +21,7 @@ along with the Neural Programs Library.  If not, see
 #include <itkImageFileWriter.h>
 #include <itkImageFileReader.h>
 #include <itkCastImageFilter.h>
+#include <itkBSplineTransformInitializer.h>
 
 #include <tclap/CmdLine.h>
 #include "version.h"
@@ -75,7 +76,7 @@ int main(int argc, char** argv)
 	TCLAP::ValueArg<string> a_out("O", "output-fit", "Output brain image after "
 			"transformation, in same space as input", false, "", "image", cmd);
 	
-	TCLAP::SwitchArg a_moments("M", "moments-align", "Moments align first.", cmd);
+//	TCLAP::SwitchArg a_moments("M", "moments-align", "Moments align first.", cmd);
 	TCLAP::SwitchArg a_reorient("X", "bad-orient", "If the orientation is "
 			"incorrect, then this will restart in every 90 degree rotation", cmd);
 	TCLAP::SwitchArg a_biascorr("b", "bias-correct", "Apply bias correction to "
@@ -85,14 +86,20 @@ int main(int argc, char** argv)
 			"Gaussian smoothing standard deviation during rigid "
 			"registration. Provide mutliple to schedule mutli-resolution "
 			"registration strategy.", false, "double", cmd);
+	TCLAP::SwitchArg a_norigid("", "no-rigid",
+			"No rigid registration step.", cmd);
 	TCLAP::MultiArg<double> a_affine_smooth("A", "affine-smooth",
 			"Gaussian smoothing standard deviation during affine "
 			"registration. Provide mutliple to schedule mutli-resolution "
 			"registration strategy.", false, "double", cmd);
+	TCLAP::SwitchArg a_noaffine("", "no-affine",
+			"No affine registration step.", cmd);
 	TCLAP::MultiArg<double> a_bspline_smooth("B", "bspline-smooth",
 			"Gaussian smoothing standard deviation during bspline "
 			"registration. Provide mutliple to schedule mutli-resolution "
 			"registration strategy.", false, "double", cmd);
+	TCLAP::SwitchArg a_nobspline("", "no-bspline",
+			"No bspline registration step.", cmd);
 	
 	TCLAP::SwitchArg  a_debug("D", "debug",
 			"Write out intermediate images in the current directory "
@@ -125,11 +132,10 @@ int main(int argc, char** argv)
 	}
 	
 	if(!a_affine_smooth.isSet()) {
-		affine_smooth.resize(4);
+		affine_smooth.resize(3);
 		affine_smooth[0] = 4;
 		affine_smooth[1] = 3; 
 		affine_smooth[2] = 2; 
-		affine_smooth[3] = 1; 
 	}
 	
 	if(!a_bspline_smooth.isSet()) {
@@ -178,15 +184,17 @@ int main(int argc, char** argv)
 		rigid->SetCenter(fixedCenter);
 	}
 	
-	/* Rigid registration */
-	for(size_t ii=0; ii < rigid_smooth.size(); ii++) {
-		rigidReg(rigid, atlas, input, rigid_smooth[ii], 
-				true, 5000, 0.0001, .1, 0, 0.7, 0, 0.0001);
+	if(!a_norigid.isSet()) {
+		/* Rigid registration */
+		for(size_t ii=0; ii < rigid_smooth.size(); ii++) {
+			rigidReg(rigid, atlas, input, rigid_smooth[ii], 
+					true, 5000, 0.0001, .1, 0, 0.7, 0, 0.0001);
 
-		std::ostringstream oss;
-		oss << "rigid_" << rigid_smooth[ii] << ".nii.gz";
-		auto tmp = apply(rigid.GetPointer(), atlas, input);
-		writeImage<ImageT>(oss.str(), tmp);
+			std::ostringstream oss;
+			oss << "rigid_" << rigid_smooth[ii] << ".nii.gz";
+			auto tmp = apply(rigid.GetPointer(), atlas, input);
+			writeImage<ImageT>(oss.str(), tmp);
+		}
 	}
 	
 	/* Affine registration */
@@ -195,38 +203,73 @@ int main(int argc, char** argv)
 	affine->SetMatrix(rigid->GetMatrix());
 	affine->SetTranslation(rigid->GetTranslation());
 	affine->SetCenter(rigid->GetCenter());
-	auto tmp = apply(affine.GetPointer(), atlas, input);
-	writeImage<ImageT>("affine_init.nii.gz", tmp);
-	for(size_t ii=0; ii < affine_smooth.size(); ii++) {
-		affineReg(affine, atlas, input, affine_smooth[ii], 
-				true, 8000, 0.0001, .1, 0, 0.8, 0, 0.001);
 
-		std::ostringstream oss;
-		oss << "affine_" << affine_smooth[ii] << ".nii.gz";
+	if(!a_noaffine.isSet()) {
 		auto tmp = apply(affine.GetPointer(), atlas, input);
-		writeImage<ImageT>(oss.str(), tmp);
+		writeImage<ImageT>("affine_init.nii.gz", tmp);
+		for(size_t ii=0; ii < affine_smooth.size(); ii++) {
+			affineReg(affine, atlas, input, affine_smooth[ii], 
+					true, 100000, 0.0001, .1, 0, 0.8, 0, 0.001);
+
+			std::ostringstream oss;
+			oss << "affine_" << affine_smooth[ii] << ".nii.gz";
+			auto tmp = apply(affine.GetPointer(), atlas, input);
+			writeImage<ImageT>(oss.str(), tmp);
+		}
+
+		atlas = apply(affine.GetPointer(), atlas, input);
+		labelmap = applyNN(affine.GetPointer(), labelmap, input);
+		
+		writeImage<ImageT>("bspline_init.nii.gz", atlas);
+		writeImage<ImageT>("bspline_target.nii.gz", input);
 	}
-	
-	atlas = apply(affine.GetPointer(), atlas, input);
-	labelmap = applyNN(affine.GetPointer(), labelmap, input);
+		
 	
 	// probably
 	// do bias field correction based on the atlas
 
 	/* BSpline Registration */
 	auto bspline = itk::BSplineTransform<double, 3, 3>::New();
-	for(int ii=0; bspline_smooth.size(); ii++) {
-		bSplineReg(bspline, atlas, input, bspline_smooth[ii], 
-				true, 1000, 0.001, 1, 0, 0.4, 0, 0.01);
+	{
+		double space = 10;
+		ImageT::SizeType size;
+		for(size_t ii=0; ii<3; ii++) {
+			size[ii] = input->GetRequestedRegion().GetSize()[ii]*
+				input->GetSpacing()[ii]/space;
+		}
+		auto bspinit = itk::BSplineTransformInitializer<
+			itk::BSplineTransform<double,3,3>,ImageT>::New();
+		bspinit->SetImage(input);
+		bspinit->SetTransform(bspline);
+		bspinit->SetTransformDomainMeshSize(size);
+		bspinit->InitializeTransform();
 	}
-	atlas = apply(bspline.GetPointer(), atlas, input);
-	labelmap = applyNN(bspline.GetPointer(), labelmap, input);
+
+	if(!a_nobspline.isSet()) {
+		for(int ii=0; bspline_smooth.size(); ii++) {
+			bSplineReg(bspline, atlas, input, bspline_smooth[ii], 
+					true, 1000, 0.001, 1, 0, 0.4, 0, 0.0001);
+
+			std::ostringstream oss;
+			oss << "bspline_" << affine_smooth[ii] << ".nii.gz";
+			auto tmp = apply(bspline.GetPointer(), atlas, input);
+			writeImage<ImageT>(oss.str(), tmp);
+		}
+		atlas = apply(bspline.GetPointer(), atlas, input);
+		labelmap = applyNN(bspline.GetPointer(), labelmap, input);
+	}
 
 	
-	if(a_out.isSet()) 
+	if(a_out.isSet()) {
+		cerr << "Writing Deformed Atlas:" << endl << atlas << endl;
 		writeImage<ImageT>(a_out.getValue(), atlas);
-	if(a_outl.isSet()) 
+		cerr << "Done" << endl;
+	}
+	if(a_outl.isSet()) {
+		cerr << "Writing Deformed Mask:" << endl << atlas << endl;
 		writeImage<LImageT>(a_outl.getValue(), labelmap);
+		cerr << "Done" << endl;
+	}
 	
 	} catch (TCLAP::ArgException &e)  // catch any exceptions
 	{ std::cerr << "error: " << e.error() << " for arg " << e.argId() << std::endl; }

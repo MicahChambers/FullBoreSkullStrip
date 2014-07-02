@@ -99,6 +99,26 @@ double bSplineReg(itk::BSplineTransform<double, 3, 3>::Pointer tfm,
 				target->GetSpacing()[ii]/source->GetSpacing()[ii];
 		target = resize<ImageT>(target, osz, gaussKern, 10);
 	}
+	
+	{
+		itk::ImageFileWriter<ImageT>::Pointer writer;
+		writer = itk::ImageFileWriter<ImageT>::New();
+		std::ostringstream oss;
+		oss << "bspline_source_smooth" << sd << ".nii.gz"; 
+		writer->SetFileName(oss.str());
+		writer->SetInput(source);
+		writer->Update();
+	}
+	
+	{
+		itk::ImageFileWriter<ImageT>::Pointer writer;
+		writer = itk::ImageFileWriter<ImageT>::New();
+		std::ostringstream oss;
+		oss << "bspline_target_smooth" << sd << ".nii.gz"; 
+		writer->SetFileName(oss.str());
+		writer->SetInput(target);
+		writer->Update();
+	}
 
 	auto interp = itk::LinearInterpolateImageFunction<ImageT>::New();
 	auto reg = itk::ImageRegistrationMethod<ImageT, ImageT>::New();
