@@ -83,21 +83,25 @@ double bSplineReg(itk::BSplineTransform<double, 3, 3>::Pointer tfm,
 			int nstep, double minstep, double maxstep,
 			int nbins, double relax, int nsamp, double TOL)
 {
+	cerr << "BSpline Registration" << endl;
 	if(sd > 0) {
+		cerr << "Old Res: " << source->GetSpacing()<< ", " << target->GetSpacing() << endl;
 		/******************************************************
 		 * Low Resolution
 		 *****************************************************/
 		ImageT::SizeType osz;
 		for(int ii = 0 ; ii < 3; ii++)
 			osz[ii] = source->GetRequestedRegion().GetSize()[ii]*
-				source->GetSpacing()[ii]/sd;
+				source->GetSpacing()[ii]/(2*sd);
 		source = resize<ImageT>(source, osz, gaussKern, 10);
+		cerr << "New Res: " << source->GetSpacing()<< ", "; 
 
 		// match the spacing
 		for(int ii = 0 ; ii < 3; ii++)
 			osz[ii] = target->GetRequestedRegion().GetSize()[ii]*
 				target->GetSpacing()[ii]/source->GetSpacing()[ii];
 		target = resize<ImageT>(target, osz, gaussKern, 10);
+		cerr << target->GetSpacing() << endl;
 	}
 	
 	{
@@ -185,14 +189,14 @@ double affineReg(itk::AffineTransform<double, 3>::Pointer tfm,
 		for(int ii = 0 ; ii < 3; ii++)
 			osz[ii] = source->GetRequestedRegion().GetSize()[ii]*
 				source->GetSpacing()[ii]/(2*sd);
-		source = resize<ImageT>(source, osz, DoGKern, 10);
+		source = resize<ImageT>(source, osz, gaussKern, 10);
 		cerr << "New Res: " << source->GetSpacing()<< ", "; 
 
 		// match the spacing
 		for(int ii = 0 ; ii < 3; ii++)
 			osz[ii] = target->GetRequestedRegion().GetSize()[ii]*
 				target->GetSpacing()[ii]/source->GetSpacing()[ii];
-		target = resize<ImageT>(target, osz, DoGKern, 10);
+		target = resize<ImageT>(target, osz, gaussKern, 10);
 		cerr << target->GetSpacing() << endl;
 	}
 
