@@ -133,31 +133,43 @@ int main(int argc, char** argv)
 	ImageT::PointType fixedCenter = getCenter(input);
 	ImageT::PointType movingCenter = getCenter(atlas);;
 
-	vector<double> rigid_smooth(a_rigid_smooth.getValue());
-	vector<double> affine_smooth(a_affine_smooth.getValue());
-	vector<double> bspline_smooth(a_bspline_smooth.getValue());
+	vector<double> rigid_smooth;
+	vector<double> affine_smooth;
+	vector<double> bspline_smooth;
 	std::set<itk::Array<double>, ParamLessEqual> tested;
 
-	if(!a_rigid_smooth.isSet()) {
-		rigid_smooth.resize(3);
-		rigid_smooth[0] = 3;
-		rigid_smooth[1] = 2; 
-		rigid_smooth[2] = 1; 
+	if(a_rigid_smooth.isSet()) 
+		rigid_smooth.assign(a_rigid_smooth.begin(), a_rigid_smooth.end());
+	else
+		rigid_smooth.assign({4,3});
+
+	cerr << "Rigid Steps: ";
+	for(size_t ii=0; ii<rigid_smooth.size() ;ii++) {
+		cerr << rigid_smooth[ii] << ", ";
 	}
-	
-	if(!a_affine_smooth.isSet()) {
-		affine_smooth.resize(3);
-		affine_smooth[0] = 4;
-		affine_smooth[1] = 3; 
-		affine_smooth[2] = 2; 
+	cerr << "\n";
+
+	if(a_affine_smooth.isSet()) 
+		affine_smooth.assign(a_affine_smooth.begin(), a_affine_smooth.end());
+	else
+		affine_smooth.assign({4,3});
+	cerr << "Affine Steps: ";
+	for(size_t ii=0; ii<affine_smooth.size() ;ii++) {
+		cerr << affine_smooth[ii] << ", ";
 	}
-	
-	if(!a_bspline_smooth.isSet()) {
-		bspline_smooth.resize(3);
-		bspline_smooth[0] = 3;
-		bspline_smooth[1] = 2;
+	cerr << "\n";
+
+	if(a_bspline_smooth.isSet()) 
+		bspline_smooth.assign(a_bspline_smooth.begin(), a_bspline_smooth.end());
+	else
+		bspline_smooth.assign({4,3});
+	cerr << "BSpline Steps: ";
+	for(size_t ii=0; ii<bspline_smooth.size() ;ii++) {
+		cerr << bspline_smooth[ii] << ", ";
 	}
-	
+	cerr << "\n";
+
+
 	/* Affine registration, try all different directions, but do it at low res */
 	auto rigid = itk::Euler3DTransform<double>::New();
 	if(a_reorient.isSet()) {
@@ -257,19 +269,21 @@ int main(int argc, char** argv)
 		bspinit->InitializeTransform();
 	}
 
-	for(int ii=0; bspline_smooth.size(); ii++) {
+	for(int ii=0; ii < bspline_smooth.size(); ii++) {
+		cerr << bspline_smooth[ii] << endl;
 		bSplineReg(bspline, atlas, input, bspline_smooth[ii], 
 				true, a_bsplinesteps.getValue(), a_bsplineminstep.getValue(),
 				a_bsplinemaxstep.getValue(), 0, 0.4, 0, 0.0001);
 
 		std::ostringstream oss;
-		oss << "bspline_" << affine_smooth[ii] << ".nii.gz";
+		oss << "bspline_" << bspline_smooth[ii] << ".nii.gz";
 		auto tmp = apply(bspline.GetPointer(), atlas, input);
 		writeImage<ImageT>(oss.str(), tmp);
 	}
 	atlas = apply(bspline.GetPointer(), atlas, input);
 	labelmap = applyNN(bspline.GetPointer(), labelmap, input);
 
+	cerr << "All Done!" << endl;
 	
 	if(a_out.isSet()) {
 		cerr << "Writing Deformed Atlas:" << endl << atlas << endl;

@@ -85,23 +85,30 @@ double bSplineReg(itk::BSplineTransform<double, 3, 3>::Pointer tfm,
 {
 	cerr << "BSpline Registration" << endl;
 	if(sd > 0) {
-		cerr << "Old Res: " << source->GetSpacing()<< ", " << target->GetSpacing() << endl;
 		/******************************************************
 		 * Low Resolution
 		 *****************************************************/
 		ImageT::SizeType osz;
+		cerr << "Old: " << source->GetRequestedRegion().GetSize() << " / "
+			<< source->GetSpacing() << endl;
 		for(int ii = 0 ; ii < 3; ii++)
 			osz[ii] = source->GetRequestedRegion().GetSize()[ii]*
 				source->GetSpacing()[ii]/(2*sd);
+		cerr << "New : " << osz << " / ";
 		source = resize<ImageT>(source, osz, gaussKern, 10);
-		cerr << "New Res: " << source->GetSpacing()<< ", "; 
+		cerr << source->GetRequestedRegion().GetSize() << " / " 
+			<< source->GetSpacing() << "-" << endl;
 
 		// match the spacing
+		cerr << "Old: " << target->GetRequestedRegion().GetSize() << " / "
+			<< target->GetSpacing() << "-" << endl;
 		for(int ii = 0 ; ii < 3; ii++)
 			osz[ii] = target->GetRequestedRegion().GetSize()[ii]*
-				target->GetSpacing()[ii]/source->GetSpacing()[ii];
+				target->GetSpacing()[ii]/(2*sd);
+		cerr << "New : " << osz << " / ";
 		target = resize<ImageT>(target, osz, gaussKern, 10);
-		cerr << target->GetSpacing() << endl;
+		cerr << target->GetRequestedRegion().GetSize() << " / " 
+			<< target->GetSpacing() << endl;
 	}
 	
 	{
